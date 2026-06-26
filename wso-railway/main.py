@@ -149,12 +149,21 @@ def suggest_reply():
 
         # Step 5: post as private note
         flag_human = reply.startswith("[FLAG FOR HUMAN]")
-        note_prefix = "🤖 *Suggested reply — review and send if accurate:*\n\n"
-        if flag_human:
-            note_prefix = "🚨 *FLAG FOR HUMAN — bot is not confident. Review carefully:*\n\n"
-            reply = reply.replace("[FLAG FOR HUMAN]", "").strip()
+note_prefix = "🤖 <strong>Suggested reply — review and send if accurate:</strong><br><br>"
+if flag_human:
+    note_prefix = "🚨 <strong>FLAG FOR HUMAN — bot is not confident. Review carefully:</strong><br><br>"
+    reply = reply.replace("[FLAG FOR HUMAN]", "").strip()
 
-        full_note = note_prefix + reply
+# Convert markdown to HTML for Freshdesk
+reply = reply.replace("\n\n", "<br><br>")
+reply = reply.replace("\n- ", "<br>• ")
+reply = reply.replace("- ", "• ")
+
+# Convert markdown links to HTML links
+import re
+reply = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', reply)
+
+full_note = note_prefix + reply
         status_code, note_resp = post_private_note(ticket_id, full_note)
         print(f"Posted private note: {status_code}")
 
