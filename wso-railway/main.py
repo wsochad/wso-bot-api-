@@ -15,7 +15,7 @@ from datetime import datetime
 app = Flask(__name__)
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-GITHUB_RAW = "https://raw.githubusercontent.com/wsochad/wso-kb/main/wso-kb"
+GITHUB_RAW = "https://raw.githubusercontent.com/wsochad/wso-kb/refs/heads/main/wso-kb"
 FRESHWORKS_DOMAIN = os.environ["FRESHWORKS_DOMAIN"]
 FRESHWORKS_API_KEY = os.environ["FRESHWORKS_API_KEY"]
 
