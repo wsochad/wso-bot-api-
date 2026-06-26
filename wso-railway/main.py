@@ -2,13 +2,13 @@
 WSO Academy Support Bot API
 Hosted on Railway. Called by Zapier when a new ticket arrives.
 Fetches KB from GitHub, calls Claude, returns suggested reply.
-Logs everything to Railway's built-in logging.
 """
 
 from flask import Flask, request, jsonify
 import requests
 import json
 import os
+import re
 from anthropic import Anthropic
 from datetime import datetime
 
@@ -77,12 +77,27 @@ Student first name: {first_name}
 
 Write a personalized reply following the templates and style guide exactly.
 Address the student by first name.
-If this needs human review (billing, JobTestPrep, LinkedIn Premium activation), 
+If this needs human review (billing, JobTestPrep, LinkedIn Premium activation),
 start your reply with [FLAG FOR HUMAN] then write a warm holding reply.
-Do not include a subject line. Just the reply body."""
+Do not include a subject line. Just the reply body.
+Use markdown formatting: **bold**, bullet points with -, and [link text](url) for links."""
         }]
     )
     return resp.content[0].text.strip()
+
+
+def markdown_to_html(text):
+    # Convert markdown links to HTML
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
+    # Convert bold
+    text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+    # Convert bullet points
+    text = re.sub(r'^- (.+)$', r'<br>• \1', text, flags=re.MULTILINE)
+    # Convert double newlines to breaks
+    text = text.replace('\n\n', '<br><br>')
+    # Convert remaining single newlines
+    text = text.replace('\n', '<br>')
+    return text
 
 
 def post_private_note(ticket_id, note_body):
@@ -117,16 +132,13 @@ def suggest_reply():
     print(f"[{datetime.now()}] Processing ticket {ticket_id}: {ticket_subject}")
 
     try:
-        # Step 1: fetch index and style guide
         index_content = fetch_github_file("index.md")
         style_guide = fetch_github_file("style-guide.md")
         print(f"Fetched index and style guide from GitHub")
 
-        # Step 2: route to relevant templates
         template_files = route_to_templates(ticket_subject, ticket_description, index_content)
         print(f"Routed to templates: {template_files}")
 
-        # Step 3: fetch those template files
         templates_content = []
         for fname in template_files:
             try:
@@ -137,7 +149,6 @@ def suggest_reply():
 
         templates_text = "\n\n".join(templates_content)
 
-        # Step 4: generate reply
         reply = generate_reply(
             ticket_subject,
             ticket_description,
@@ -147,23 +158,18 @@ def suggest_reply():
         )
         print(f"Generated reply ({len(reply)} chars)")
 
-        # Step 5: post as private note
         flag_human = reply.startswith("[FLAG FOR HUMAN]")
-note_prefix = "🤖 <strong>Suggested reply — review and send if accurate:</strong><br><br>"
-if flag_human:
-    note_prefix = "🚨 <strong>FLAG FOR HUMAN — bot is not confident. Review carefully:</strong><br><br>"
-    reply = reply.replace("[FLAG FOR HUMAN]", "").strip()
+        reply = reply.replace("[FLAG FOR HUMAN]", "").strip()
 
-# Convert markdown to HTML for Freshdesk
-reply = reply.replace("\n\n", "<br><br>")
-reply = reply.replace("\n- ", "<br>• ")
-reply = reply.replace("- ", "• ")
+        reply_html = markdown_to_html(reply)
 
-# Convert markdown links to HTML links
-import re
-reply = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', reply)
+        if flag_human:
+            note_prefix = "🚨 <strong>FLAG FOR HUMAN — bot is not confident. Review carefully:</strong><br><br>"
+        else:
+            note_prefix = "🤖 <strong>Suggested reply — review and send if accurate:</strong><br><br>"
 
-full_note = note_prefix + reply
+        full_note = note_prefix + reply_html
+
         status_code, note_resp = post_private_note(ticket_id, full_note)
         print(f"Posted private note: {status_code}")
 
