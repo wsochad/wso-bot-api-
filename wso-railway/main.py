@@ -22,7 +22,8 @@ FRESHWORKS_API_KEY = os.environ["FRESHWORKS_API_KEY"]
 
 def fetch_github_file(path):
     url = f"{GITHUB_RAW}/{path}"
-    resp = requests.get(url)
+    headers = {"Authorization": f"token {os.environ.get('GITHUB_TOKEN', '')}"}
+    resp = requests.get(url, headers=headers)
     resp.raise_for_status()
     return resp.text
 
