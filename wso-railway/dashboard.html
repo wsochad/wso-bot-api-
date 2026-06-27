@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WSO Academy — Support Intelligence</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: #1e1e2e;
+    --accent: #6366f1;
+    --accent-dim: rgba(99,102,241,0.12);
+    --green: #22c55e;
+    --green-dim: rgba(34,197,94,0.12);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --text: #e2e2ef;
+    --text-secondary: #6b6b8a;
+    --text-dim: #3a3a5c;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; min-height: 100vh; }
+
+  .shell { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 220px; background: var(--surface); border-right: 1px solid var(--border);
+    padding: 28px 0; flex-shrink: 0; position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+
+  .logo { padding: 0 20px 28px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .logo-text { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-secondary); }
+  .logo-sub { font-size: 10px; color: var(--text-dim); margin-top: 3px; font-family: var(--mono); }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 20px;
+    cursor: pointer; color: var(--text-secondary); font-size: 13px; font-weight: 500;
+    transition: all 0.15s; border-left: 2px solid transparent;
+  }
+  .nav-item:hover { color: var(--text); background: var(--accent-dim); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+  .nav-icon { width: 16px; height: 16px; opacity: 0.7; flex-shrink: 0; }
+  .nav-item.active .nav-icon { opacity: 1; }
+
+  .sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border); }
+  .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .status-text { font-size: 11px; color: var(--text-secondary); font-family: var(--mono); }
+
+  .main { flex: 1; overflow: auto; }
+
+  .topbar {
+    padding: 20px 32px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--surface); position: sticky; top: 0; z-index: 10;
+  }
+  .page-title { font-size: 15px; font-weight: 600; }
+  .page-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  .refresh-btn {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text-secondary);
+    padding: 7px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    font-family: var(--sans); transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+  }
+  .refresh-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  .content { padding: 28px 32px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 28px; }
+
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px; position: relative; overflow: hidden;
+  }
+  .stat-card::before { content:''; position:absolute; top:0;left:0;right:0; height:2px; }
+  .stat-card.blue::before { background: var(--accent); }
+  .stat-card.green::before { background: var(--green); }
+  .stat-card.amber::before { background: var(--amber); }
+  .stat-card.purple::before { background: var(--purple); }
+
+  .stat-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.08em; font-weight:500; }
+  .stat-value { font-size:32px; font-weight:300; margin:8px 0 4px; font-family:var(--mono); letter-spacing:-0.02em; }
+  .stat-card.blue .stat-value { color: var(--accent); }
+  .stat-card.green .stat-value { color: var(--green); }
+  .stat-card.amber .stat-value { color: var(--amber); }
+  .stat-card.purple .stat-value { color: var(--purple); }
+  .stat-sub { font-size:11px; color:var(--text-dim); font-family:var(--mono); }
+
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
+  .three-col { display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:20px; }
+
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .card-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .card-title { font-size:13px; font-weight:600; }
+  .card-badge { font-size:10px; font-family:var(--mono); background:var(--surface2); border:1px solid var(--border); padding:2px 8px; border-radius:20px; color:var(--text-secondary); }
+
+  .table-wrap { overflow-x:auto; }
+  .table-scroll { max-height:440px; overflow-y:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; padding:10px 20px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); border-bottom:1px solid var(--border); background:var(--surface2); }
+  td { padding:12px 20px; font-size:12px; color:var(--text-secondary); border-bottom:1px solid var(--border); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:var(--surface2); color:var(--text); }
+  .td-primary { color:var(--text); font-weight:500; }
+  .td-mono { font-family:var(--mono); font-size:11px; }
+
+  .badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600; font-family:var(--mono); text-transform:uppercase; letter-spacing:0.05em; }
+  .badge-red { background:var(--red-dim); color:var(--red); }
+  .badge-green { background:var(--green-dim); color:var(--green); }
+  .badge-amber { background:var(--amber-dim); color:var(--amber); }
+  .badge-blue { background:var(--accent-dim); color:var(--accent); }
+
+  .bar-list { padding:16px 20px; display:flex; flex-direction:column; gap:14px; }
+  .bar-label { display:flex; justify-content:space-between; margin-bottom:6px; }
+  .bar-name { font-size:12px; color:var(--text); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px; }
+  .bar-count { font-size:11px; color:var(--text-secondary); font-family:var(--mono); }
+  .bar-track { height:4px; background:var(--surface2); border-radius:2px; }
+  .bar-fill { height:4px; background:var(--accent); border-radius:2px; transition:width 0.6s ease; }
+
+  .flag-list { padding:16px 20px; display:flex; flex-direction:column; gap:10px; }
+  .flag-item { display:flex; align-items:center; justify-content:space-between; }
+  .flag-name { font-size:12px; font-family:var(--mono); color:var(--text); }
+  .flag-count { font-size:11px; font-family:var(--mono); background:var(--red-dim); color:var(--red); padding:2px 8px; border-radius:4px; }
+
+  .search-row { display:flex; gap:10px; margin-bottom:16px; }
+  .search-input { flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:9px 14px; border-radius:6px; font-size:13px; font-family:var(--sans); outline:none; }
+  .search-input:focus { border-color:var(--accent); }
+  .search-input::placeholder { color:var(--text-dim); }
+
+  .filter-btn { background:var(--surface); border:1px solid var(--border); color:var(--text-secondary); padding:9px 14px; border-radius:6px; font-size:12px; cursor:pointer; font-family:var(--sans); transition:all 0.15s; }
+  .filter-btn:hover { color:var(--text); }
+  .filter-btn.active-red { color:var(--red); border-color:var(--red); background:var(--red-dim); }
+
+  .timeline { padding:0 20px 20px; }
+  .timeline-item { display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--border); }
+  .timeline-item:last-child { border-bottom:none; }
+  .timeline-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); flex-shrink:0; margin-top:4px; }
+  .timeline-dot.green { background:var(--green); }
+  .timeline-dot.amber { background:var(--amber); }
+  .timeline-title { font-size:12px; font-weight:500; color:var(--text); }
+  .timeline-sub { font-size:11px; color:var(--text-secondary); margin-top:3px; font-family:var(--mono); }
+
+  .student-result { background:var(--surface2); border:1px solid var(--border); border-radius:8px; margin-top:16px; overflow:hidden; }
+  .student-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+  .student-email { font-family:var(--mono); font-size:13px; color:var(--accent); }
+  .student-count { font-size:11px; color:var(--text-secondary); }
+
+  .empty { padding:48px 20px; text-align:center; color:var(--text-dim); font-size:13px; }
+  .empty-icon { font-size:28px; margin-bottom:10px; }
+  .loading { padding:32px; text-align:center; color:var(--text-dim); font-family:var(--mono); font-size:12px; }
+
+  .pr-tags { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; }
+  .mini-kv { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
+  .mini-kv:last-child { border-bottom:none; }
+  .mini-label { font-size:12px; color:var(--text-secondary); }
+  .mini-val { font-family:var(--mono); font-size:13px; color:var(--text); }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-text">WSO Academy</div>
+      <div class="logo-sub">Support Intelligence</div>
+    </div>
+    <nav>
+      <div class="nav-item active" onclick="switchPanel('overview',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+        Overview
+      </div>
+      <div class="nav-item" onclick="switchPanel('tickets',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h8M2 12h6"/></svg>
+        Tickets
+      </div>
+      <div class="nav-item" onclick="switchPanel('templates',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 6h6M5 9h4"/></svg>
+        Templates
+      </div>
+      <div class="nav-item" onclick="switchPanel('prs',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="4" cy="4" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="4" r="2"/><path d="M4 6v4M6 4h4M12 6v2a2 2 0 01-2 2H8"/></svg>
+        Agent PRs
+      </div>
+      <div class="nav-item" onclick="switchPanel('students',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.314 2.686-5 6-5s6 1.686 6 5"/></svg>
+        Students
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="status-dot"></span>
+      <span class="status-text" id="api-status">connecting...</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="page-title" id="page-title">Overview</div>
+        <div class="page-sub" id="page-sub">Live support analytics</div>
+      </div>
+      <button class="refresh-btn" onclick="loadAll()">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 8a7 7 0 1014 0A7 7 0 001 8z" opacity="0.3"/><path d="M14 4l-1 4-4-1"/></svg>
+        Refresh
+      </button>
+    </div>
+
+    <div class="content">
+
+      <!-- OVERVIEW -->
+      <div class="panel active" id="panel-overview">
+        <div class="stat-grid">
+          <div class="stat-card blue">
+            <div class="stat-label">Total Tickets</div>
+            <div class="stat-value" id="s-total">—</div>
+            <div class="stat-sub" id="s-today">—</div>
+          </div>
+          <div class="stat-card green">
+            <div class="stat-label">Templates</div>
+            <div class="stat-value" id="s-templates">—</div>
+            <div class="stat-sub" id="s-templates-sub">—</div>
+          </div>
+          <div class="stat-card amber">
+            <div class="stat-label">Flag Rate</div>
+            <div class="stat-value" id="s-flagrate">—</div>
+            <div class="stat-sub">need human review</div>
+          </div>
+          <div class="stat-card purple">
+            <div class="stat-label">Avg Resolution</div>
+            <div class="stat-value" id="s-resolution">—</div>
+            <div class="stat-sub">hours per ticket</div>
+          </div>
+        </div>
+
+        <div class="three-col">
+          <div class="card">
+            <div class="card-header"><div class="card-title">Most Used Templates</div><div class="card-badge">top 10</div></div>
+            <div class="bar-list" id="top-templates-list"><div class="loading">loading...</div></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="card">
+              <div class="card-header"><div class="card-title">Flag Reasons</div></div>
+              <div class="flag-list" id="flag-breakdown"><div class="loading">...</div></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title">Agent PRs</div></div>
+              <div style="padding:4px 20px 16px">
+                <div class="mini-kv"><span class="mini-label">Total opened</span><span class="mini-val" id="pr-total">—</span></div>
+                <div class="mini-kv"><span class="mini-label">Merged</span><span class="mini-val" style="color:var(--green)" id="pr-merged">—</span></div>
+                <div class="mini-kv"><span class="mini-label">Improvements found</span><span class="mini-val" style="color:var(--accent)" id="pr-impr">—</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">Daily Activity</div><div class="card-badge">last 30 days</div></div>
+          <div style="padding:20px 20px 8px">
+            <canvas id="trend-canvas" height="80" style="width:100%;display:block"></canvas>
+          </div>
+          <div style="padding:0 20px 16px;display:flex;gap:20px">
+            <span style="font-size:11px;color:var(--text-dim);font-family:var(--mono)"><span style="color:var(--accent)">━</span> tickets/day</span>
+            <span style="font-size:11px;color:var(--text-dim);font-family:var(--mono)"><span style="color:var(--red)">━</span> flag rate %</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- TICKETS -->
+      <div class="panel" id="panel-tickets">
+        <div class="search-row">
+          <input class="search-input" id="ticket-search" placeholder="Search subject, email, ticket ID..." oninput="filterTickets()">
+          <button class="filter-btn" id="flag-btn" onclick="toggleFlag()">🚨 Flagged only</button>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Ticket Log</div><div class="card-badge" id="ticket-badge">—</div></div>
+          <div class="table-wrap table-scroll">
+            <table>
+              <thead><tr><th>ID</th><th>Subject</th><th>Student</th><th>Templates</th><th>Status</th><th>Time</th></tr></thead>
+              <tbody id="tickets-tbody"><tr><td colspan="6" class="loading">loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TEMPLATES -->
+      <div class="panel" id="panel-templates">
+        <div class="search-row">
+          <input class="search-input" id="tmpl-search" placeholder="Search templates..." oninput="filterTemplates()">
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Knowledge Base</div><div class="card-badge" id="tmpl-badge">—</div></div>
+          <div class="table-wrap table-scroll">
+            <table>
+              <thead><tr><th>File</th><th>Topic</th><th>Used</th><th>Flag Rate</th><th>Last Used</th><th>Added By</th></tr></thead>
+              <tbody id="templates-tbody"><tr><td colspan="6" class="loading">loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- AGENT PRs -->
+      <div class="panel" id="panel-prs">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Daily Improvement Runs</div><div class="card-badge" id="pr-badge">—</div></div>
+          <div class="timeline" id="pr-timeline"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+
+      <!-- STUDENTS -->
+      <div class="panel" id="panel-students">
+        <div class="search-row">
+          <input class="search-input" id="student-input" placeholder="Enter student email..." style="max-width:420px" onkeydown="if(event.key==='Enter')searchStudent()">
+          <button class="filter-btn" style="border-color:var(--accent);color:var(--accent)" onclick="searchStudent()">Look up</button>
+        </div>
+        <div id="student-result"></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+const API = 'https://wso-bot-api-production.up.railway.app';
+let allTickets = [], allTemplates = [], flaggedOnly = false;
+
+const TITLES = {
+  overview: ['Overview','Live support analytics'],
+  tickets: ['Ticket Log','All tickets processed by the bot'],
+  templates: ['Templates','Knowledge base usage and performance'],
+  prs: ['Agent PRs','Daily improvement runs'],
+  students: ['Student Lookup','Full ticket history by email'],
+};
+
+function switchPanel(name, el) {
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  el.classList.add('active');
+  document.getElementById('page-title').textContent = TITLES[name][0];
+  document.getElementById('page-sub').textContent = TITLES[name][1];
+}
+
+async function get(path) {
+  const r = await fetch(API+path);
+  return r.json();
+}
+
+async function loadAll() {
+  document.getElementById('api-status').textContent = 'syncing...';
+  try {
+    await Promise.all([loadOverview(), loadTickets(), loadTemplates(), loadPRs()]);
+    document.getElementById('api-status').textContent = 'live · '+new Date().toLocaleTimeString();
+  } catch(e) {
+    document.getElementById('api-status').textContent = 'error';
+  }
+}
+
+async function loadOverview() {
+  const d = await get('/analytics/overview');
+  document.getElementById('s-total').textContent = d.tickets.total_tickets ?? 0;
+  document.getElementById('s-today').textContent = `${d.tickets.today??0} today · ${d.tickets.this_week??0} this week`;
+  document.getElementById('s-templates').textContent = d.templates.total ?? 0;
+  document.getElementById('s-templates-sub').textContent = `${d.templates.by_agent??0} agent · ${d.templates.by_human??0} human`;
+  document.getElementById('s-flagrate').textContent = (d.tickets.flag_rate ?? 0) + '%';
+  document.getElementById('s-resolution').textContent = d.resolutions.avg_hours != null ? d.resolutions.avg_hours+'h' : '—';
+  document.getElementById('pr-total').textContent = d.prs.total ?? 0;
+  document.getElementById('pr-merged').textContent = d.prs.merged ?? 0;
+  document.getElementById('pr-impr').textContent = d.prs.total_improvements ?? 0;
+
+  const tl = document.getElementById('top-templates-list');
+  if (!d.top_templates?.length) { tl.innerHTML = '<div class="empty"><div class="empty-icon">📋</div>No data yet</div>'; }
+  else {
+    const max = Math.max(...d.top_templates.map(t=>t.times_used), 1);
+    tl.innerHTML = d.top_templates.map(t=>`
+      <div>
+        <div class="bar-label"><span class="bar-name">${t.filename}</span><span class="bar-count">${t.times_used}x</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${t.times_used/max*100}%"></div></div>
+      </div>`).join('');
+  }
+
+  const fl = document.getElementById('flag-breakdown');
+  if (!d.flag_breakdown?.length) { fl.innerHTML = '<div style="font-size:12px;color:var(--text-dim);text-align:center;padding:12px 0">No flags yet</div>'; }
+  else { fl.innerHTML = d.flag_breakdown.map(f=>`<div class="flag-item"><span class="flag-name">${f.flag_reason}</span><span class="flag-count">${f.count}</span></div>`).join(''); }
+
+  if (d.daily_trend?.length) drawTrend(d.daily_trend.slice().reverse());
+}
+
+function drawTrend(data) {
+  const canvas = document.getElementById('trend-canvas');
+  if (!canvas || !canvas.offsetWidth) return;
+  canvas.width = canvas.offsetWidth * devicePixelRatio;
+  canvas.height = 80 * devicePixelRatio;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const W = canvas.offsetWidth, H = 80;
+  const tickets = data.map(d=>d.tickets_processed||0);
+  const flags = data.map(d=>d.flag_rate||0);
+  const maxT = Math.max(...tickets,1), maxF = Math.max(...flags,1);
+  const n = data.length, step = W/Math.max(n-1,1);
+  function line(vals,max,color) {
+    ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.lineJoin='round';
+    vals.forEach((v,i)=>{ const x=i*step,y=H-(v/max)*(H-10)-5; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.stroke();
+  }
+  line(tickets,maxT,'#6366f1');
+  line(flags,maxF,'#ef4444');
+}
+
+async function loadTickets() {
+  allTickets = await get('/analytics/tickets?limit=200');
+  renderTickets(allTickets);
+}
+
+function renderTickets(data) {
+  document.getElementById('ticket-badge').textContent = data.length+' tickets';
+  const tb = document.getElementById('tickets-tbody');
+  if (!data.length) { tb.innerHTML='<tr><td colspan="6" class="empty"><div class="empty-icon">🎫</div>No tickets yet</td></tr>'; return; }
+  tb.innerHTML = data.map(t=>`<tr>
+    <td class="td-mono td-primary">#${t.ticket_id}</td>
+    <td class="td-primary" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.subject||'—'}</td>
+    <td class="td-mono" style="font-size:11px">${t.student_email||'—'}</td>
+    <td>${(t.templates_used||[]).map(f=>`<span class="badge badge-blue">${f.replace('.md','')}</span>`).join(' ')}</td>
+    <td>${t.flag_human?`<span class="badge badge-red">🚨 ${t.flag_reason||'flagged'}</span>`:`<span class="badge badge-green">✓ auto</span>`}</td>
+    <td class="td-mono" style="font-size:11px;white-space:nowrap">${ago(t.created_at)}</td>
+  </tr>`).join('');
+}
+
+function filterTickets() {
+  const q = document.getElementById('ticket-search').value.toLowerCase();
+  let f = flaggedOnly ? allTickets.filter(t=>t.flag_human) : allTickets;
+  if (q) f = f.filter(t=>(t.subject||'').toLowerCase().includes(q)||(t.student_email||'').toLowerCase().includes(q)||(t.ticket_id||'').includes(q));
+  renderTickets(f);
+}
+
+function toggleFlag() {
+  flaggedOnly = !flaggedOnly;
+  document.getElementById('flag-btn').classList.toggle('active-red', flaggedOnly);
+  filterTickets();
+}
+
+async function loadTemplates() {
+  allTemplates = await get('/analytics/templates');
+  renderTemplates(allTemplates);
+}
+
+function renderTemplates(data) {
+  document.getElementById('tmpl-badge').textContent = data.length+' templates';
+  const tb = document.getElementById('templates-tbody');
+  if (!data.length) { tb.innerHTML='<tr><td colspan="6" class="empty"><div class="empty-icon">📋</div>No templates tracked yet</td></tr>'; return; }
+  tb.innerHTML = data.map(t=>`<tr>
+    <td class="td-mono td-primary" style="font-size:11px">${t.filename}</td>
+    <td class="td-primary">${t.topic||'—'}</td>
+    <td class="td-mono" style="color:${t.times_used>0?'var(--accent)':'var(--text-dim)'}">${t.times_used||0}</td>
+    <td>${(t.flag_rate||0)>0.3?`<span class="badge badge-red">${Math.round(t.flag_rate*100)}%</span>`:`<span class="badge badge-green">${Math.round((t.flag_rate||0)*100)}%</span>`}</td>
+    <td class="td-mono" style="font-size:11px">${t.last_used?ago(t.last_used):'—'}</td>
+    <td><span class="badge ${t.created_by==='agent'?'badge-amber':'badge-blue'}">${t.created_by==='agent'?'🤖 agent':'👤 human'}</span></td>
+  </tr>`).join('');
+}
+
+function filterTemplates() {
+  const q = document.getElementById('tmpl-search').value.toLowerCase();
+  renderTemplates(q ? allTemplates.filter(t=>(t.filename||'').toLowerCase().includes(q)||(t.topic||'').toLowerCase().includes(q)) : allTemplates);
+}
+
+async function loadPRs() {
+  const data = await get('/analytics/prs');
+  document.getElementById('pr-badge').textContent = data.length+' runs';
+  const tl = document.getElementById('pr-timeline');
+  if (!data.length) { tl.innerHTML='<div class="empty"><div class="empty-icon">🤖</div>No agent runs yet</div>'; return; }
+  tl.innerHTML = data.map(pr=>`
+    <div class="timeline-item">
+      <div class="timeline-dot ${pr.merged?'green':'amber'}"></div>
+      <div>
+        <div class="timeline-title">
+          ${pr.pr_url?`<a href="${pr.pr_url}" target="_blank" style="color:var(--accent);text-decoration:none">PR #${pr.pr_number}</a>`:`Run`}
+          &nbsp;<span class="badge ${pr.merged?'badge-green':'badge-amber'}">${pr.merged?'✓ merged':'open'}</span>
+        </div>
+        <div class="timeline-sub">${ago(pr.created_at)} · ${pr.items_found||0} improvements · ${(pr.new_templates||[]).length} new templates · ${(pr.trigger_updates||[]).length} trigger updates</div>
+        ${(pr.new_templates||[]).length?`<div class="pr-tags">${(pr.new_templates||[]).map(t=>`<span class="badge badge-blue">${t}</span>`).join('')}</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function searchStudent() {
+  const email = document.getElementById('student-input').value.trim();
+  if (!email) return;
+  const el = document.getElementById('student-result');
+  el.innerHTML = '<div class="loading">looking up...</div>';
+  try {
+    const data = await get('/analytics/student/'+encodeURIComponent(email));
+    if (!data.length) { el.innerHTML=`<div class="empty"><div class="empty-icon">🔍</div>No tickets found for ${email}</div>`; return; }
+    el.innerHTML = `<div class="student-result">
+      <div class="student-header"><span class="student-email">${email}</span><span class="student-count">${data.length} tickets</span></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Subject</th><th>Templates</th><th>Status</th><th>Resolved In</th><th>Date</th></tr></thead>
+        <tbody>${data.map(t=>`<tr>
+          <td class="td-mono td-primary">#${t.ticket_id}</td>
+          <td class="td-primary" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.subject||'—'}</td>
+          <td>${(t.templates_used||[]).map(f=>`<span class="badge badge-blue">${f.replace('.md','')}</span>`).join(' ')}</td>
+          <td>${t.flag_human?`<span class="badge badge-red">🚨 ${t.flag_reason||'flagged'}</span>`:`<span class="badge badge-green">✓ auto</span>`}</td>
+          <td class="td-mono">${t.time_to_resolve_hours!=null?t.time_to_resolve_hours+'h':'—'}</td>
+          <td class="td-mono" style="font-size:11px">${ago(t.created_at)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
+  } catch(e) { el.innerHTML='<div class="empty">Error looking up student</div>'; }
+}
+
+function ago(str) {
+  if (!str) return '—';
+  const d = new Date(str), now = new Date(), s = (now-d)/1000;
+  if (s<60) return 'just now';
+  if (s<3600) return Math.floor(s/60)+'m ago';
+  if (s<86400) return Math.floor(s/3600)+'h ago';
+  if (s<604800) return Math.floor(s/86400)+'d ago';
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+loadAll();
+setInterval(loadAll, 60000);
+</script>
+</body>
+</html>
