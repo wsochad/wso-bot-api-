@@ -619,12 +619,9 @@ def analytics_resolutions():
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            SELECT r.ticket_id, t.subject, t.student_email,
-                   t.templates_used, t.flag_human,
-                   r.resolved_at, r.time_to_resolve_hours
-            FROM ticket_resolutions r
-            LEFT JOIN tickets t ON r.ticket_id = t.ticket_id
-            ORDER BY r.resolved_at DESC LIMIT 50
+            SELECT ticket_id, resolved_at, time_to_resolve_hours, created_at
+            FROM ticket_resolutions
+            ORDER BY resolved_at DESC LIMIT 50
         """)
         resolutions = [dict(r) for r in cur.fetchall()]
         cur.close()
