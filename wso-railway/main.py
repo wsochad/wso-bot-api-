@@ -23,6 +23,7 @@ GITHUB_RAW = "https://raw.githubusercontent.com/wsochad/wso-kb/refs/heads/main/w
 FRESHWORKS_DOMAIN = os.environ["FRESHWORKS_DOMAIN"]
 FRESHWORKS_API_KEY = os.environ["FRESHWORKS_API_KEY"]
 DATABASE_URL = os.environ.get("DATABASE_URL")
+RAILWAY_API_URL: ${{ secrets.RAILWAY_API_URL }}
 
 FLAG_REASONS = {
     "jobtestprep": "jobTestPrep",
