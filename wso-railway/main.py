@@ -642,7 +642,10 @@ try:
     init_db()
 except Exception as e:
     print(f"DB init warning: {e}")
-
+@app.route("/dashboard")
+def dashboard():
+    with open("dashboard.html") as f:
+        return f.read(), 200, {"Content-Type": "text/html"}S
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
