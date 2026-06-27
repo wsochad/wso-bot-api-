@@ -3,3 +3,4 @@ anthropic
 requests
 gunicorn
 psycopg2-binary
+flask-cors
