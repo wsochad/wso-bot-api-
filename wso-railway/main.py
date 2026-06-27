@@ -16,7 +16,9 @@ from psycopg2.extras import RealDictCursor
 from anthropic import Anthropic
 from datetime import datetime
 
+from flask_cors import CORS
 app = Flask(__name__)
+CORS(app)
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 GITHUB_RAW = "https://raw.githubusercontent.com/wsochad/wso-kb/refs/heads/main/wso-kb"
