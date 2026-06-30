@@ -16,15 +16,50 @@ from psycopg2.extras import RealDictCursor
 from anthropic import Anthropic
 from datetime import datetime
 
-from flask_cors import CORS
 app = Flask(__name__)
-CORS(app)
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 GITHUB_RAW = "https://raw.githubusercontent.com/wsochad/wso-kb/refs/heads/main/wso-kb"
 FRESHWORKS_DOMAIN = os.environ["FRESHWORKS_DOMAIN"]
 FRESHWORKS_API_KEY = os.environ["FRESHWORKS_API_KEY"]
 DATABASE_URL = os.environ.get("DATABASE_URL")
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
+SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL", "")
+
+
+def slack_post(text, thread_ts=None, channel=None):
+    """Post a message via Slack Web API. Returns the message ts for threading. Fails silently if not configured."""
+    if not SLACK_BOT_TOKEN or not SLACK_CHANNEL:
+        return None
+    try:
+        payload = {
+            "channel": channel or SLACK_CHANNEL,
+            "text": text,
+        }
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+        resp = requests.post(
+            "https://slack.com/api/chat.postMessage",
+            headers={
+                "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=10
+        )
+        data = resp.json()
+        if not data.get("ok"):
+            print(f"Slack post error: {data.get('error')}")
+            return None
+        return data.get("ts")
+    except Exception as e:
+        print(f"Slack post exception: {e}")
+        return None
+
+
+def slack_notify(text, blocks=None):
+    """Backwards-compatible simple alert, no threading."""
+    slack_post(text)
 
 FLAG_REASONS = {
     "jobtestprep": "jobTestPrep",
@@ -107,6 +142,19 @@ def init_db():
             last_used TIMESTAMPTZ,
             flag_rate FLOAT DEFAULT 0,
             added_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS reply_comparisons (
+            id SERIAL PRIMARY KEY,
+            ticket_id TEXT,
+            template_used TEXT,
+            bot_draft TEXT,
+            human_reply TEXT,
+            similarity FLOAT,
+            quality_tier TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
 
@@ -200,7 +248,80 @@ def log_resolution(ticket_id, resolved_at_str):
         print(f"DB log_resolution error: {e}")
 
 
-def log_pr(pr_number, pr_url, branch, report):
+def calculate_similarity(text1, text2):
+    """Simple word-overlap similarity score between two texts."""
+    import re as _re
+    def tokenize(t):
+        t = _re.sub(r'<[^>]+>', ' ', t or '')
+        t = _re.sub(r'[^\w\s]', ' ', t.lower())
+        return set(w for w in t.split() if len(w) > 2)
+
+    words1 = tokenize(text1)
+    words2 = tokenize(text2)
+    if not words1 or not words2:
+        return 0.0
+
+    overlap = len(words1 & words2)
+    total = len(words1 | words2)
+    return round((overlap / total) * 100, 1) if total > 0 else 0.0
+
+
+def quality_tier(similarity):
+    if similarity >= 85:
+        return "excellent"
+    elif similarity >= 60:
+        return "good"
+    elif similarity >= 35:
+        return "needs_work"
+    else:
+        return "rewritten"
+
+
+def log_reply_comparison(ticket_id, template_used, bot_draft, human_reply):
+    try:
+        similarity = calculate_similarity(bot_draft, human_reply)
+        tier = quality_tier(similarity)
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO reply_comparisons
+            (ticket_id, template_used, bot_draft, human_reply, similarity, quality_tier)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (ticket_id, template_used, bot_draft[:1000], human_reply[:1000],
+              similarity, tier))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"Logged comparison for {ticket_id}: {similarity}% ({tier})")
+        return similarity, tier
+    except Exception as e:
+        print(f"DB log_reply_comparison error: {e}")
+        return None, None
+
+
+def get_bot_draft(ticket_id):
+    """Fetch the bot's draft from our own tickets table."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT reply_preview, templates_used
+            FROM tickets WHERE ticket_id = %s
+            ORDER BY created_at DESC LIMIT 1
+        """, (ticket_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return row["reply_preview"], (row["templates_used"] or [None])[0]
+        return None, None
+    except Exception as e:
+        print(f"get_bot_draft error: {e}")
+        return None, None
+
+
+
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -276,6 +397,14 @@ def fetch_github_file(path):
     return resp.text
 
 
+def safe_fetch_github_file(path):
+    try:
+        return fetch_github_file(path)
+    except Exception as e:
+        print(f"Could not fetch {path}: {e}")
+        return None
+
+
 # ── Claude ────────────────────────────────────────────────────────────────────
 
 def route_to_templates(subject, description, index_content):
@@ -291,16 +420,30 @@ STUDENT TICKET:
 Subject: {subject}
 Description: {description}
 
-Return ONLY a JSON array of 1-3 most relevant template filenames.
+Return ONLY a JSON array of 1-3 most relevant template filenames, using EXACTLY the filenames listed in the KB INDEX above. Never invent a filename that is not in the index.
 Example: ["13-heyreach.md", "27-mentor-request.md"]
-No explanation. Just the JSON array."""}]
+Return ONLY the JSON array. No explanation, no markdown, no extra text, nothing before or after it."""}]
     )
     raw = resp.content[0].text.strip()
+
+    # Strip code fences if present
     if "```" in raw:
-        raw = raw.split("```")[1].split("```")[0].strip()
+        parts = raw.split("```")
+        raw = parts[1] if len(parts) > 1 else raw
         if raw.startswith("json"):
             raw = raw[4:].strip()
-    return json.loads(raw)
+        raw = raw.strip()
+
+    # Take only the first valid JSON array found, ignore anything after it
+    try:
+        decoder = json.JSONDecoder()
+        result, _ = decoder.raw_decode(raw)
+        if isinstance(result, list):
+            return [f for f in result if isinstance(f, str)]
+        return []
+    except Exception as e:
+        print(f"route_to_templates parse error: {e} -- raw was: {raw[:200]}")
+        return []
 
 
 def generate_reply(subject, description, first_name, templates_text, style_guide):
@@ -376,13 +519,34 @@ def suggest_reply():
         template_files = route_to_templates(subject, description, index_content)
         print(f"Templates: {template_files}")
 
+        if not template_files:
+            print(f"No templates matched for ticket {ticket_id}, flagging for human")
+            flag_human = True
+            flag_reason = "noTemplate"
+            full_note = "🚨 <strong>FLAG FOR HUMAN:</strong><br><br>No matching template found. Please review and respond manually."
+            status_code, _ = post_private_note(ticket_id, full_note)
+            log_ticket(ticket_id, student_email, student_name, subject,
+                       [], True, flag_reason, "no template matched", status_code)
+            snapshot_daily_stats()
+            slack_notify(
+                f"🚨 *Routing failed* for ticket <https://{FRESHWORKS_DOMAIN}/a/tickets/{ticket_id}|#{ticket_id}>\n"
+                f"*Subject:* {subject}\n"
+                f"No templates matched — flagged for human review."
+            )
+            return jsonify({
+                "success": True, "ticket_id": ticket_id,
+                "templates_used": [], "flag_human": True,
+                "flag_reason": flag_reason, "note_status": status_code
+            })
+
         templates_content = []
         for fname in template_files:
-            try:
-                content = fetch_github_file(f"templates/{fname}")
+            content = safe_fetch_github_file(f"templates/{fname}")
+            if content:
                 templates_content.append(f"=== {fname} ===\n{content}")
-            except Exception as e:
-                print(f"Could not fetch {fname}: {e}")
+
+        if not templates_content:
+            print(f"All routed templates failed to fetch for ticket {ticket_id}")
 
         reply = generate_reply(subject, description, first_name,
                                "\n\n".join(templates_content), style_guide)
@@ -417,6 +581,7 @@ def suggest_reply():
 
     except Exception as e:
         print(f"Error: {e}")
+        slack_notify(f"🔴 *Bot error* on ticket <https://{FRESHWORKS_DOMAIN}/a/tickets/{ticket_id}|#{ticket_id}>\n```{str(e)[:300]}```")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -439,7 +604,38 @@ def ticket_resolved():
     return jsonify({"success": True, "ticket_id": ticket_id})
 
 
-@app.route("/analytics/log-pr", methods=["POST"])
+@app.route("/reply-sent", methods=["POST"])
+def reply_sent():
+    """
+    Called by Zapier when a ticket gets a PUBLIC reply (the actual sent reply).
+    Compares it against the bot's draft (stored when /suggest-reply ran) to
+    measure how much the human edited it. This is the 'gold reply' signal.
+    """
+    data = request.json or {}
+    ticket_id = str(data.get("ticket_id") or "")
+    human_reply = data.get("human_reply", "")
+
+    if not ticket_id or not human_reply:
+        return jsonify({"error": "ticket_id and human_reply required"}), 400
+
+    bot_draft, template_used = get_bot_draft(ticket_id)
+
+    if not bot_draft:
+        print(f"No bot draft found for ticket {ticket_id}, skipping comparison")
+        return jsonify({"success": False, "reason": "no_bot_draft_found"}), 200
+
+    similarity, tier = log_reply_comparison(ticket_id, template_used, bot_draft, human_reply)
+
+    return jsonify({
+        "success": True,
+        "ticket_id": ticket_id,
+        "template_used": template_used,
+        "similarity": similarity,
+        "quality_tier": tier
+    })
+
+
+
 def log_pr_route():
     """Improvement agent calls this after opening a PR."""
     data = request.json or {}
@@ -490,7 +686,7 @@ def analytics_overview():
         template_stats = dict(cur.fetchone())
 
         cur.execute("""
-            SELECT ROUND(AVG(time_to_resolve_hours)::numeric, 1) as avg_hours
+            SELECT ROUND(AVG(time_to_resolve_hours), 1) as avg_hours
             FROM ticket_resolutions
             WHERE time_to_resolve_hours IS NOT NULL
         """)
@@ -615,7 +811,55 @@ def student_history(email):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/analytics/resolutions", methods=["GET"])
+@app.route("/analytics/reply-quality", methods=["GET"])
+def analytics_reply_quality():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT
+                template_used,
+                COUNT(*) as sample_size,
+                ROUND(AVG(similarity)::numeric, 1) as avg_similarity,
+                COUNT(*) FILTER (WHERE quality_tier = 'excellent') as excellent,
+                COUNT(*) FILTER (WHERE quality_tier = 'good') as good,
+                COUNT(*) FILTER (WHERE quality_tier = 'needs_work') as needs_work,
+                COUNT(*) FILTER (WHERE quality_tier = 'rewritten') as rewritten
+            FROM reply_comparisons
+            WHERE template_used IS NOT NULL
+            GROUP BY template_used
+            ORDER BY avg_similarity ASC
+        """)
+        by_template = [dict(r) for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT ROUND(AVG(similarity)::numeric, 1) as overall_avg, COUNT(*) as total_compared
+            FROM reply_comparisons
+        """)
+        overall = dict(cur.fetchone())
+
+        cur.execute("""
+            SELECT ticket_id, template_used, bot_draft, human_reply, similarity, quality_tier, created_at
+            FROM reply_comparisons
+            WHERE quality_tier = 'rewritten'
+            ORDER BY created_at DESC LIMIT 20
+        """)
+        worst_cases = [dict(r) for r in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "overall": overall,
+            "by_template": by_template,
+            "worst_cases": worst_cases
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 def analytics_resolutions():
     try:
         conn = get_db()
@@ -642,10 +886,7 @@ try:
     init_db()
 except Exception as e:
     print(f"DB init warning: {e}")
-@app.route("/dashboard")
-def dashboard():
-    with open("dashboard.html") as f:
-        return f.read(), 200, {"Content-Type": "text/html"}
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
