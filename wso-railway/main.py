@@ -939,6 +939,14 @@ def analytics_resolutions():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+
+@app.route("/dashboard")
+def dashboard():
+    with open("dashboard.html") as f:
+        return f.read(), 200, {"Content-Type": "text/html"}
+
+
 # ── Boot ──────────────────────────────────────────────────────────────────────
 
 try:
