@@ -5,28 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WSO Academy — Support Intelligence</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&family=JetBrains+Mono:wght@400;500&display=swap');
 
   :root {
-    --bg: #0a0a0f;
-    --surface: #111118;
-    --surface2: #1a1a24;
-    --border: #1e1e2e;
-    --accent: #6366f1;
-    --accent-dim: rgba(99,102,241,0.12);
-    --green: #22c55e;
-    --green-dim: rgba(34,197,94,0.12);
-    --amber: #f59e0b;
-    --amber-dim: rgba(245,158,11,0.12);
-    --red: #ef4444;
-    --red-dim: rgba(239,68,68,0.12);
-    --purple: #a78bfa;
-    --purple-dim: rgba(167,139,250,0.12);
-    --text: #e2e2ef;
-    --text-secondary: #6b6b8a;
-    --text-dim: #3a3a5c;
+    --bg: #f7f7f5;
+    --surface: #ffffff;
+    --surface2: #f0f0ee;
+    --border: #e2e2de;
+    --accent: #4f46e5;
+    --accent-dim: rgba(79,70,229,0.08);
+    --green: #16a34a;
+    --green-dim: rgba(22,163,74,0.1);
+    --amber: #d97706;
+    --amber-dim: rgba(217,119,6,0.1);
+    --red: #dc2626;
+    --red-dim: rgba(220,38,38,0.1);
+    --purple: #7c3aed;
+    --purple-dim: rgba(124,58,237,0.1);
+    --text: #18181b;
+    --text-secondary: #6b6b75;
+    --text-dim: #a1a1aa;
     --mono: 'JetBrains Mono', monospace;
-    --sans: 'Inter', sans-serif;
+    --sans: 'Lato', sans-serif;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -85,6 +85,7 @@
   .stat-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 10px; padding: 20px; position: relative; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   }
   .stat-card::before { content:''; position:absolute; top:0;left:0;right:0; height:2px; }
   .stat-card.blue::before { background: var(--accent); }
@@ -103,7 +104,7 @@
   .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px; }
   .three-col { display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:20px; }
 
-  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
   .card-header { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:13px; font-weight:600; }
   .card-badge { font-size:10px; font-family:var(--mono); background:var(--surface2); border:1px solid var(--border); padding:2px 8px; border-radius:20px; color:var(--text-secondary); }
@@ -581,11 +582,11 @@ async function loadQuality() {
           <div class="two-col" style="margin-bottom:0">
             <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
               <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-dim);margin-bottom:6px">🤖 Bot draft</div>
-              <div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5;max-height:180px;overflow-y:auto">${escapeHtml(c.bot_draft || '')}</div>
+              <div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5;max-height:180px;overflow-y:auto">${escapeHtml(cleanReplyText(c.bot_draft))}</div>
             </div>
             <div style="background:var(--surface2);border:1px solid var(--green);border-radius:8px;padding:12px">
               <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--green);margin-bottom:6px">👤 Human reply (sent)</div>
-              <div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5;max-height:180px;overflow-y:auto">${escapeHtml(c.human_reply || '')}</div>
+              <div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5;max-height:180px;overflow-y:auto">${escapeHtml(cleanReplyText(c.human_reply))}</div>
             </div>
           </div>
         </div>
@@ -600,6 +601,16 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function cleanReplyText(str) {
+  if (!str) return '';
+  return str
+    .replace(/\u200b/g, '')              // zero-width spaces from email clients
+    .replace(/[ \t]{2,}/g, ' ')          // collapse runs of spaces/tabs into one
+    .replace(/\n{3,}/g, '\n\n')          // collapse 3+ newlines into a max of 2
+    .replace(/ +\n/g, '\n')              // trailing spaces before a line break
+    .trim();
 }
 
 async function searchStudent() {
