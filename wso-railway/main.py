@@ -744,7 +744,7 @@ def analytics_overview():
         template_stats = dict(cur.fetchone())
 
         cur.execute("""
-            SELECT ROUND(AVG(time_to_resolve_hours), 1) as avg_hours
+            SELECT ROUND(AVG(time_to_resolve_hours)::numeric, 1) as avg_hours
             FROM ticket_resolutions
             WHERE time_to_resolve_hours IS NOT NULL
         """)
