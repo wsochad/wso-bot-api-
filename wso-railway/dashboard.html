@@ -602,7 +602,7 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-
+async function searchStudent() {
   const email = document.getElementById('student-input').value.trim();
   if (!email) return;
   const el = document.getElementById('student-result');
