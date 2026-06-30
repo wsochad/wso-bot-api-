@@ -585,11 +585,88 @@ def suggest_reply():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ── Webhooks ──────────────────────────────────────────────────────────────────
+def get_last_team_reply(ticket_id, bot_draft=None, template_used=None):
+    """
+    Fetch the full conversation for a ticket from Freshdesk, then ask Claude
+    to identify the message that actually addressed the student's question --
+    not just the chronologically last team reply, which might be a pleasantry
+    like 'you're welcome!' after the real answer.
+    """
+    try:
+        url = f"https://{FRESHWORKS_DOMAIN}/api/v2/tickets/{ticket_id}/conversations"
+        resp = requests.get(url, auth=(FRESHWORKS_API_KEY, "X"), timeout=15)
+        resp.raise_for_status()
+        conversations = resp.json()
+
+        team_replies = []
+        for conv in conversations:
+            if conv.get("private") is False and conv.get("incoming") is False:
+                body = (conv.get("body_text") or conv.get("body") or "").strip()
+                if body:
+                    team_replies.append({"index": len(team_replies), "text": body[:600]})
+
+        if not team_replies:
+            return None
+
+        if len(team_replies) == 1:
+            return team_replies[0]["text"]
+
+        ticket_resp = requests.get(
+            f"https://{FRESHWORKS_DOMAIN}/api/v2/tickets/{ticket_id}",
+            auth=(FRESHWORKS_API_KEY, "X"), timeout=15
+        )
+        ticket_data = ticket_resp.json() if ticket_resp.status_code == 200 else {}
+        original_question = (ticket_data.get("description_text") or "")[:500]
+
+        draft_context = ""
+        if bot_draft:
+            draft_context = f"""
+THE BOT'S DRAFT REPLY (for reference -- the team may have sent this nearly verbatim,
+edited it, or replaced it entirely):
+{bot_draft[:600]}
+
+TEMPLATE THE BOT USED: {template_used or 'unknown'}
+"""
+
+        prompt = f"""A support ticket thread has multiple replies from the team. Identify which ONE reply is the substantive answer to the student's original question -- the message that actually resolves their issue, contains the real information, or confirms an action was taken.
+
+NOT the right pick: greetings, "you're welcome", "happy to help!", "let us know if anything else", or other pleasantries with no real content.
+
+A short reply CAN still be the right pick if it confirms something concrete (e.g. "Confirmed, I've moved you to the new track" or "Approved, sending now" both count as substantive even if brief).
+{draft_context}
+STUDENT'S ORIGINAL QUESTION:
+{original_question}
+
+TEAM REPLIES IN ORDER:
+{json.dumps(team_replies, indent=2)}
+
+Return ONLY the index number (just the digit) of the substantive reply."""
+
+        resp = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=10,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        raw = resp.content[0].text.strip()
+        idx = int(''.join(c for c in raw if c.isdigit()) or 0)
+        idx = min(idx, len(team_replies) - 1)
+
+        return team_replies[idx]["text"]
+
+    except Exception as e:
+        print(f"get_last_team_reply error for {ticket_id}: {e}")
+        return None
+
+
 
 @app.route("/ticket-resolved", methods=["POST"])
 def ticket_resolved():
-    """Freshdesk calls this when a ticket is resolved."""
+    """
+    Freshdesk calls this when a ticket is resolved.
+    Logs resolution time, then fetches the full conversation to compare
+    the bot's original draft against the team's actual final reply.
+    This is the one clean 'gold reply' comparison point per resolution.
+    """
     data = request.json or {}
     ticket_id = str(data.get("ticket_id") or data.get("id") or "")
     resolved_at = data.get("resolved_at") or data.get("updated_at") or datetime.now().isoformat()
@@ -599,43 +676,24 @@ def ticket_resolved():
 
     log_resolution(ticket_id, resolved_at)
     snapshot_daily_stats()
-
     print(f"Ticket {ticket_id} resolved at {resolved_at}")
+
+    bot_draft, template_used = get_bot_draft(ticket_id)
+    if bot_draft:
+        human_reply = get_last_team_reply(ticket_id, bot_draft=bot_draft, template_used=template_used)
+        if human_reply:
+            similarity, tier = log_reply_comparison(ticket_id, template_used, bot_draft, human_reply)
+            print(f"Gold reply comparison for {ticket_id}: {similarity}% ({tier})")
+        else:
+            print(f"No team reply found for {ticket_id}, skipping comparison")
+    else:
+        print(f"No bot draft for {ticket_id} (not handled by bot), skipping comparison")
+
     return jsonify({"success": True, "ticket_id": ticket_id})
 
 
-@app.route("/reply-sent", methods=["POST"])
-def reply_sent():
-    """
-    Called by Zapier when a ticket gets a PUBLIC reply (the actual sent reply).
-    Compares it against the bot's draft (stored when /suggest-reply ran) to
-    measure how much the human edited it. This is the 'gold reply' signal.
-    """
-    data = request.json or {}
-    ticket_id = str(data.get("ticket_id") or "")
-    human_reply = data.get("human_reply", "")
 
-    if not ticket_id or not human_reply:
-        return jsonify({"error": "ticket_id and human_reply required"}), 400
-
-    bot_draft, template_used = get_bot_draft(ticket_id)
-
-    if not bot_draft:
-        print(f"No bot draft found for ticket {ticket_id}, skipping comparison")
-        return jsonify({"success": False, "reason": "no_bot_draft_found"}), 200
-
-    similarity, tier = log_reply_comparison(ticket_id, template_used, bot_draft, human_reply)
-
-    return jsonify({
-        "success": True,
-        "ticket_id": ticket_id,
-        "template_used": template_used,
-        "similarity": similarity,
-        "quality_tier": tier
-    })
-
-
-
+@app.route("/analytics/log-pr", methods=["POST"])
 def log_pr_route():
     """Improvement agent calls this after opening a PR."""
     data = request.json or {}
@@ -860,6 +918,7 @@ def analytics_reply_quality():
 
 
 
+@app.route("/analytics/resolutions", methods=["GET"])
 def analytics_resolutions():
     try:
         conn = get_db()
