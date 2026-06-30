@@ -199,6 +199,10 @@
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.314 2.686-5 6-5s6 1.686 6 5"/></svg>
         Students
       </div>
+      <div class="nav-item" onclick="switchPanel('quality',this)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 1l2 4.5 5 .5-3.5 3.5 1 5L8 12l-4.5 2.5 1-5L1 6l5-.5z"/></svg>
+        Quality
+      </div>
     </nav>
     <div class="sidebar-footer">
       <span class="status-dot"></span>
@@ -328,6 +332,43 @@
         <div id="student-result"></div>
       </div>
 
+      <!-- QUALITY -->
+      <div class="panel" id="panel-quality">
+        <div class="stat-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:20px">
+          <div class="stat-card blue">
+            <div class="stat-label">Overall Avg Similarity</div>
+            <div class="stat-value" id="q-overall">—</div>
+            <div class="stat-sub" id="q-overall-sub">bot draft vs human reply</div>
+          </div>
+          <div class="stat-card amber">
+            <div class="stat-label">Compared So Far</div>
+            <div class="stat-value" id="q-count">—</div>
+            <div class="stat-sub">resolved tickets analyzed</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">
+            <div class="card-title">Quality by Template</div>
+            <div class="card-badge">worst first — these need attention</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Template</th><th>Avg Similarity</th><th>Sample</th><th>Excellent</th><th>Good</th><th>Needs Work</th><th>Rewritten</th></tr></thead>
+              <tbody id="quality-by-template-tbody"><tr><td colspan="7" class="loading">loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Worst Cases — Side by Side</div>
+            <div class="card-badge" id="worst-badge">—</div>
+          </div>
+          <div id="worst-cases-list" class="timeline" style="padding:16px 20px"><div class="loading">loading...</div></div>
+        </div>
+      </div>
+
     </div>
   </main>
 </div>
@@ -342,6 +383,7 @@ const TITLES = {
   templates: ['Templates','Knowledge base usage and performance'],
   prs: ['Agent PRs','Daily improvement runs'],
   students: ['Student Lookup','Full ticket history by email'],
+  quality: ['Reply Quality','Bot draft vs human reply — gold standard tracking'],
 };
 
 function switchPanel(name, el) {
@@ -361,7 +403,7 @@ async function get(path) {
 async function loadAll() {
   document.getElementById('api-status').textContent = 'syncing...';
   try {
-    await Promise.all([loadOverview(), loadTickets(), loadTemplates(), loadPRs()]);
+    await Promise.all([loadOverview(), loadTickets(), loadTemplates(), loadPRs(), loadQuality()]);
     document.getElementById('api-status').textContent = 'live · '+new Date().toLocaleTimeString();
   } catch(e) {
     document.getElementById('api-status').textContent = 'error';
@@ -494,7 +536,73 @@ async function loadPRs() {
     </div>`).join('');
 }
 
-async function searchStudent() {
+async function loadQuality() {
+  try {
+    const d = await get('/analytics/reply-quality');
+
+    document.getElementById('q-overall').textContent = (d.overall?.overall_avg ?? '0') + '%';
+    document.getElementById('q-overall-sub').textContent = `${d.overall?.total_compared ?? 0} resolved tickets analyzed`;
+    document.getElementById('q-count').textContent = d.overall?.total_compared ?? 0;
+
+    const tb = document.getElementById('quality-by-template-tbody');
+    if (!d.by_template?.length) {
+      tb.innerHTML = '<tr><td colspan="7" class="empty"><div class="empty-icon">⭐</div>No comparisons yet — needs resolved tickets with multiple replies</td></tr>';
+    } else {
+      tb.innerHTML = d.by_template.map(t => {
+        const sim = parseFloat(t.avg_similarity);
+        const color = sim >= 85 ? 'var(--green)' : sim >= 60 ? 'var(--accent)' : sim >= 35 ? 'var(--amber)' : 'var(--red)';
+        return `<tr>
+          <td class="td-mono td-primary" style="font-size:11px">${t.template_used}</td>
+          <td><span class="badge" style="background:${color}22;color:${color}">${t.avg_similarity}%</span></td>
+          <td class="td-mono">${t.sample_size}</td>
+          <td class="td-mono" style="color:var(--green)">${t.excellent||0}</td>
+          <td class="td-mono" style="color:var(--accent)">${t.good||0}</td>
+          <td class="td-mono" style="color:var(--amber)">${t.needs_work||0}</td>
+          <td class="td-mono" style="color:var(--red)">${t.rewritten||0}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    document.getElementById('worst-badge').textContent = (d.worst_cases?.length || 0) + ' cases';
+    const wc = document.getElementById('worst-cases-list');
+    if (!d.worst_cases?.length) {
+      wc.innerHTML = '<div class="empty"><div class="empty-icon">✅</div>No low-quality cases yet</div>';
+    } else {
+      wc.innerHTML = d.worst_cases.map(c => `
+        <div class="timeline-item" style="display:block">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div>
+              <span class="badge badge-red">${c.similarity}% match</span>
+              <span class="td-mono" style="font-size:11px;color:var(--text-secondary);margin-left:8px">${c.template_used || 'unknown'}</span>
+              <span class="td-mono" style="font-size:11px;color:var(--text-dim);margin-left:8px">#${c.ticket_id}</span>
+            </div>
+            <span class="td-mono" style="font-size:11px;color:var(--text-dim)">${ago(c.created_at)}</span>
+          </div>
+          <div class="two-col" style="margin-bottom:0">
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-dim);margin-bottom:6px">🤖 Bot draft</div>
+              <div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5;max-height:180px;overflow-y:auto">${escapeHtml(c.bot_draft || '')}</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--green);border-radius:8px;padding:12px">
+              <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:var(--green);margin-bottom:6px">👤 Human reply (sent)</div>
+              <div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap;line-height:1.5;max-height:180px;overflow-y:auto">${escapeHtml(c.human_reply || '')}</div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+  } catch(e) {
+    console.error('loadQuality error', e);
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+
   const email = document.getElementById('student-input').value.trim();
   if (!email) return;
   const el = document.getElementById('student-result');
